@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Ultimate Planner</title>
+    <script src="https://unpkg.com/htmx.org@1.9.10" integrity="sha384-D1Kt09CQf3fU+2eZJx6h4/eJQ6jJ6J6J6J6J6J6J6J6J6J6J6J6J6J6J6J6J6J6" crossorigin="anonymous"></script>
+    <link rel="stylesheet" href="https://cdn.simplecss.org/simple.min.css">
+    <style>
+        .done {
+            text-decoration: line-through;
+            color: #888;
+        }
+        .task-list {
+            margin-top: 1rem;
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <h1>Ultimate Planner</h1>
+        <p>Your tasks, organized efficiently</p>
+    </header>
+    <main>
+        {% block content %}{% endblock %}
+    </main>
+    <footer>
+        <p>Ultimate Planner &copy; 2025</p>
+    </footer>
+</body>
+</html>

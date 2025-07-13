@@ -1,0 +1,11 @@
+[project]
+name = "ultimate-planner"
+version = "0.1.0"
+description = "Ultimate Planner"
+authors = [
+  { name = "Chandima Ranaweera", email = "admin@tecbizsolutions.com" }
+]
+dependencies = [
+  "fastapi",
+  "uvicorn"
+]
