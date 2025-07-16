@@ -7,8 +7,18 @@ from typing import List, Optional, Dict, Any
 from uuid import UUID, uuid4
 import json
 from typing_extensions import Annotated
+from .auth import router as auth_router
+from .database import create_tables
 
 app = FastAPI()
+
+# Include authentication router
+app.include_router(auth_router)
+
+# Create database tables on startup
+@app.on_event("startup")
+def startup_event():
+    create_tables()
 
 # Set up templates
 templates = Jinja2Templates(directory="app/templates")
