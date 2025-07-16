@@ -7,5 +7,14 @@ authors = [
 ]
 dependencies = [
   "fastapi",
-  "uvicorn"
+  "uvicorn",
+  "sqlalchemy>=2.0.0",
+  "alembic",
+  "psycopg2-binary",
+  "aiosqlite",
+  "python-dotenv",
+  "pydantic[email]",
+  "pytest",
+  "pytest-asyncio",
+  "jinja2>=3.1.6",
 ]
