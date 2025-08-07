@@ -1,390 +1,306 @@
 """
-PKCE (Proof Key for Code Exchange) service implementation for OAuth 2.1 compliance.
-RFC 7636: https://tools.ietf.org/html/rfc7636
+PKCE (Proof Key for Code Exchange) Service for OAuth 2.1 Compliance
+Implements RFC 7636 for enhanced OAuth security
 """
+
+import base64
 import hashlib
 import secrets
-import base64
-import logging
-from datetime import datetime, timezone, timedelta
+import uuid
 from typing import Optional, Dict, Any
-from dataclasses import dataclass
+from datetime import datetime, timedelta
+import json
 
-import aioredis
-from aioredis import Redis
+from app.config.redis_config import get_redis_client
+from app.core.logging import get_logger
 
-from ..config.redis_config import get_redis_connection
-
-
-# Configure logging for security audit
-logger = logging.getLogger(__name__)
-
-
-@dataclass
-class PKCEData:
-    """PKCE data container."""
-    code_verifier: str
-    code_challenge: str
-    code_challenge_method: str
-    state: str
-    created_at: datetime
-    expires_at: datetime
-    
-    def is_expired(self) -> bool:
-        """Check if PKCE data is expired."""
-        return datetime.now(timezone.utc) > self.expires_at
-    
-    def to_dict(self) -> Dict[str, Any]:
-        """Convert to dictionary for Redis storage."""
-        return {
-            "code_verifier": self.code_verifier,
-            "code_challenge": self.code_challenge,
-            "code_challenge_method": self.code_challenge_method,
-            "state": self.state,
-            "created_at": self.created_at.isoformat(),
-            "expires_at": self.expires_at.isoformat()
-        }
-    
-    @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> "PKCEData":
-        """Create from dictionary retrieved from Redis."""
-        return cls(
-            code_verifier=data["code_verifier"],
-            code_challenge=data["code_challenge"],
-            code_challenge_method=data["code_challenge_method"],
-            state=data["state"],
-            created_at=datetime.fromisoformat(data["created_at"]),
-            expires_at=datetime.fromisoformat(data["expires_at"])
-        )
-
+logger = get_logger(__name__)
 
 class PKCEService:
     """
-    PKCE service for OAuth 2.1 compliance.
-    
-    Implements Proof Key for Code Exchange (RFC 7636) to prevent
-    authorization code interception attacks.
+    Service for handling PKCE (Proof Key for Code Exchange) operations
+    Required for OAuth 2.1 compliance and security
     """
     
-    # Redis key prefix for PKCE data storage
-    PKCE_REDIS_PREFIX = "pkce:state"
+    def __init__(self):
+        self.redis_client = None
+        self._ttl = 600  # 10 minutes TTL for PKCE data
     
-    # PKCE configuration constants
-    CODE_VERIFIER_LENGTH = 128  # 43-128 characters allowed, using max for security
-    CODE_CHALLENGE_METHOD = "S256"  # SHA256 method (required by OAuth 2.1)
-    PKCE_TTL_SECONDS = 600  # 10 minutes
+    async def _get_redis(self):
+        """Get Redis client with lazy initialization"""
+        if self.redis_client is None:
+            self.redis_client = await get_redis_client()
+        return self.redis_client
     
-    def __init__(self, redis_client: Optional[Redis] = None):
+    def generate_code_verifier(self, length: int = 128) -> str:
         """
-        Initialize PKCE service.
+        Generate cryptographically secure code verifier
         
         Args:
-            redis_client: Optional Redis client. If None, will get from config.
-        """
-        self.redis = redis_client
-        self._ensure_redis_connection()
-    
-    async def _ensure_redis_connection(self) -> None:
-        """Ensure Redis connection is available."""
-        if self.redis is None:
-            self.redis = await get_redis_connection()
-    
-    def generate_code_verifier(self) -> str:
-        """
-        Generate cryptographically secure code verifier.
-        
+            length: Length of code verifier (43-128 chars per RFC 7636)
+            
         Returns:
-            Base64 URL-safe encoded random string (128 characters).
+            Base64 URL-safe encoded random string
         """
-        # Generate random bytes
-        random_bytes = secrets.token_bytes(96)  # 96 bytes = 128 base64 chars
+        if not (43 <= length <= 128):
+            raise ValueError("Code verifier length must be between 43 and 128 characters")
         
-        # Encode as base64 URL-safe string
-        code_verifier = base64.urlsafe_b64encode(random_bytes).decode('ascii')
+        # Generate random bytes and encode as base64url
+        random_bytes = secrets.token_bytes(length)
+        code_verifier = base64.urlsafe_b64encode(random_bytes).decode('utf-8')
         
-        # Remove padding to ensure clean URL parameter
-        code_verifier = code_verifier.rstrip('=')
+        # Remove padding and truncate to desired length
+        code_verifier = code_verifier.rstrip('=')[:length]
         
-        logger.info("Generated PKCE code verifier", extra={"length": len(code_verifier)})
-        
+        logger.debug(f"Generated code verifier with length: {len(code_verifier)}")
         return code_verifier
     
-    def generate_code_challenge(self, code_verifier: str) -> str:
+    def generate_code_challenge(self, verifier: str, method: str = "S256") -> str:
         """
-        Generate code challenge from code verifier using SHA256.
+        Generate code challenge from verifier using SHA256
         
         Args:
-            code_verifier: The code verifier string.
+            verifier: Code verifier string
+            method: Challenge method (S256 or plain)
             
         Returns:
-            Base64 URL-safe encoded SHA256 hash of the code verifier.
+            Base64 URL-safe encoded challenge string
         """
-        # Create SHA256 hash of the code verifier
-        sha256_hash = hashlib.sha256(code_verifier.encode('ascii')).digest()
+        if method == "S256":
+            # Create SHA256 hash of verifier
+            challenge_bytes = hashlib.sha256(verifier.encode('utf-8')).digest()
+            # Encode as base64url without padding
+            challenge = base64.urlsafe_b64encode(challenge_bytes).decode('utf-8').rstrip('=')
+        elif method == "plain":
+            challenge = verifier
+        else:
+            raise ValueError(f"Unsupported challenge method: {method}")
         
-        # Encode as base64 URL-safe string
-        code_challenge = base64.urlsafe_b64encode(sha256_hash).decode('ascii')
-        
-        # Remove padding
-        code_challenge = code_challenge.rstrip('=')
-        
-        logger.info("Generated PKCE code challenge", extra={
-            "method": self.CODE_CHALLENGE_METHOD,
-            "challenge_length": len(code_challenge)
-        })
-        
-        return code_challenge
+        logger.debug(f"Generated code challenge using method: {method}")
+        return challenge
     
-    async def generate_pkce_data(self, state: str) -> PKCEData:
+    async def store_pkce_data(
+        self,
+        state: str,
+        verifier: str,
+        challenge: str,
+        method: str = "S256",
+        provider: str = None,
+        user_session: str = None
+    ) -> None:
         """
-        Generate complete PKCE data for OAuth flow.
+        Store PKCE data in Redis with TTL
         
         Args:
-            state: OAuth state parameter to correlate with PKCE data.
+            state: OAuth state parameter
+            verifier: Code verifier
+            challenge: Code challenge
+            method: Challenge method
+            provider: OAuth provider name
+            user_session: User session ID for correlation
+        """
+        try:
+            redis = await self._get_redis()
+            
+            pkce_data = {
+                "verifier": verifier,
+                "challenge": challenge,
+                "method": method,
+                "provider": provider,
+                "user_session": user_session,
+                "created_at": datetime.utcnow().isoformat(),
+                "expires_at": (datetime.utcnow() + timedelta(seconds=self._ttl)).isoformat()
+            }
+            
+            key = f"pkce:state:{state}"
+            await redis.setex(key, self._ttl, json.dumps(pkce_data))
+            
+            logger.info(f"Stored PKCE data for state: {state[:8]}... (provider: {provider})")
+            
+            # Store reverse lookup for cleanup
+            cleanup_key = f"pkce:cleanup:{int(datetime.utcnow().timestamp()) + self._ttl}"
+            await redis.sadd(cleanup_key, state)
+            await redis.expire(cleanup_key, self._ttl + 60)
+            
+        except Exception as e:
+            logger.error(f"Failed to store PKCE data: {str(e)}")
+            raise
+    
+    async def retrieve_pkce_data(self, state: str) -> Optional[Dict[str, Any]]:
+        """
+        Retrieve PKCE data by state parameter
+        
+        Args:
+            state: OAuth state parameter
             
         Returns:
-            PKCEData containing verifier, challenge, and metadata.
+            PKCE data dictionary or None if not found/expired
         """
-        await self._ensure_redis_connection()
-        
-        # Generate code verifier
-        code_verifier = self.generate_code_verifier()
-        
-        # Generate code challenge
-        code_challenge = self.generate_code_challenge(code_verifier)
-        
-        # Create PKCE data with timestamps
-        now = datetime.now(timezone.utc)
-        pkce_data = PKCEData(
-            code_verifier=code_verifier,
-            code_challenge=code_challenge,
-            code_challenge_method=self.CODE_CHALLENGE_METHOD,
-            state=state,
-            created_at=now,
-            expires_at=now + timedelta(seconds=self.PKCE_TTL_SECONDS)
-        )
-        
-        logger.info("Generated PKCE data for OAuth flow", extra={
-            "state": state,
-            "expires_at": pkce_data.expires_at.isoformat()
-        })
-        
-        return pkce_data
-    
-    async def store_pkce_data(self, state: str, pkce_data: PKCEData) -> None:
-        """
-        Store PKCE data in Redis with TTL.
-        
-        Args:
-            state: OAuth state parameter used as key correlation.
-            pkce_data: PKCE data to store.
-        """
-        await self._ensure_redis_connection()
-        
-        redis_key = f"{self.PKCE_REDIS_PREFIX}:{state}"
-        
-        # Store as hash with TTL
-        await self.redis.hset(redis_key, mapping=pkce_data.to_dict())
-        await self.redis.expire(redis_key, self.PKCE_TTL_SECONDS)
-        
-        logger.info("Stored PKCE data in Redis", extra={
-            "state": state,
-            "redis_key": redis_key,
-            "ttl_seconds": self.PKCE_TTL_SECONDS
-        })
-    
-    async def retrieve_pkce_data(self, state: str) -> Optional[PKCEData]:
-        """
-        Retrieve PKCE data from Redis by state.
-        
-        Args:
-            state: OAuth state parameter.
+        try:
+            redis = await self._get_redis()
+            key = f"pkce:state:{state}"
             
-        Returns:
-            PKCEData if found and not expired, None otherwise.
-        """
-        await self._ensure_redis_connection()
-        
-        redis_key = f"{self.PKCE_REDIS_PREFIX}:{state}"
-        
-        # Retrieve data from Redis
-        data = await self.redis.hgetall(redis_key)
-        
-        if not data:
-            logger.warning("PKCE data not found", extra={"state": state})
+            data = await redis.get(key)
+            if not data:
+                logger.warning(f"PKCE data not found for state: {state[:8]}...")
+                return None
+            
+            pkce_data = json.loads(data)
+            
+            # Check expiration
+            expires_at = datetime.fromisoformat(pkce_data["expires_at"])
+            if datetime.utcnow() > expires_at:
+                logger.warning(f"PKCE data expired for state: {state[:8]}...")
+                await redis.delete(key)
+                return None
+            
+            logger.debug(f"Retrieved PKCE data for state: {state[:8]}...")
+            return pkce_data
+            
+        except Exception as e:
+            logger.error(f"Failed to retrieve PKCE data: {str(e)}")
             return None
-        
-        # Convert bytes to strings (Redis returns bytes)
-        str_data = {k.decode() if isinstance(k, bytes) else k: 
-                   v.decode() if isinstance(v, bytes) else v 
-                   for k, v in data.items()}
-        
-        # Create PKCEData object
-        pkce_data = PKCEData.from_dict(str_data)
-        
-        # Check expiration
-        if pkce_data.is_expired():
-            logger.warning("PKCE data expired", extra={
-                "state": state,
-                "expired_at": pkce_data.expires_at.isoformat()
-            })
-            # Clean up expired data
-            await self.cleanup_pkce_data(state)
-            return None
-        
-        logger.info("Retrieved PKCE data from Redis", extra={"state": state})
-        
-        return pkce_data
     
-    async def validate_pkce(self, state: str, code_verifier: str) -> bool:
+    async def validate_pkce(
+        self,
+        state: str,
+        code_verifier: str,
+        provider: str = None
+    ) -> bool:
         """
-        Validate PKCE code verifier against stored challenge.
+        Validate PKCE code verifier against stored challenge
         
         Args:
-            state: OAuth state parameter.
-            code_verifier: Code verifier to validate.
+            state: OAuth state parameter
+            code_verifier: Code verifier from token exchange
+            provider: OAuth provider for additional validation
             
         Returns:
-            True if validation succeeds, False otherwise.
+            True if validation successful, False otherwise
         """
-        # Retrieve stored PKCE data
-        pkce_data = await self.retrieve_pkce_data(state)
-        
-        if pkce_data is None:
-            logger.error("PKCE validation failed - no data found", extra={"state": state})
-            return False
-        
-        # Generate challenge from provided verifier
-        expected_challenge = self.generate_code_challenge(code_verifier)
-        
-        # Compare challenges
-        is_valid = secrets.compare_digest(expected_challenge, pkce_data.code_challenge)
-        
-        if is_valid:
-            logger.info("PKCE validation successful", extra={"state": state})
+        try:
+            # Retrieve stored PKCE data
+            pkce_data = await self.retrieve_pkce_data(state)
+            if not pkce_data:
+                logger.warning(f"PKCE validation failed - no data for state: {state[:8]}...")
+                return False
+            
+            # Validate provider if specified
+            if provider and pkce_data.get("provider") != provider:
+                logger.warning(f"PKCE validation failed - provider mismatch: {provider}")
+                return False
+            
+            # Generate challenge from provided verifier
+            expected_challenge = self.generate_code_challenge(
+                code_verifier, 
+                pkce_data.get("method", "S256")
+            )
+            
+            # Compare challenges
+            stored_challenge = pkce_data["challenge"]
+            if expected_challenge != stored_challenge:
+                logger.warning(f"PKCE validation failed - challenge mismatch for state: {state[:8]}...")
+                return False
+            
             # Clean up used PKCE data
-            await self.cleanup_pkce_data(state)
-        else:
-            logger.error("PKCE validation failed - challenge mismatch", extra={
-                "state": state,
-                "expected_challenge": expected_challenge[:10] + "...",  # Log partial for debugging
-                "stored_challenge": pkce_data.code_challenge[:10] + "..."
-            })
-        
-        return is_valid
+            await self._cleanup_pkce_data(state)
+            
+            logger.info(f"PKCE validation successful for state: {state[:8]}... (provider: {provider})")
+            return True
+            
+        except Exception as e:
+            logger.error(f"PKCE validation error: {str(e)}")
+            return False
     
-    async def cleanup_pkce_data(self, state: str) -> None:
-        """
-        Clean up PKCE data for a specific state.
-        
-        Args:
-            state: OAuth state parameter.
-        """
-        await self._ensure_redis_connection()
-        
-        redis_key = f"{self.PKCE_REDIS_PREFIX}:{state}"
-        deleted = await self.redis.delete(redis_key)
-        
-        if deleted:
-            logger.info("Cleaned up PKCE data", extra={"state": state})
-        else:
-            logger.debug("No PKCE data to clean up", extra={"state": state})
+    async def _cleanup_pkce_data(self, state: str) -> None:
+        """Clean up PKCE data after successful validation"""
+        try:
+            redis = await self._get_redis()
+            key = f"pkce:state:{state}"
+            await redis.delete(key)
+            logger.debug(f"Cleaned up PKCE data for state: {state[:8]}...")
+        except Exception as e:
+            logger.error(f"Failed to cleanup PKCE data: {str(e)}")
     
     async def cleanup_expired_pkce(self) -> int:
         """
-        Clean up all expired PKCE data.
+        Clean up expired PKCE data
         
         Returns:
-            Number of expired entries cleaned up.
+            Number of expired entries cleaned up
         """
-        await self._ensure_redis_connection()
-        
-        # Get all PKCE keys
-        pattern = f"{self.PKCE_REDIS_PREFIX}:*"
-        keys = await self.redis.keys(pattern)
-        
-        expired_count = 0
-        current_time = datetime.now(timezone.utc)
-        
-        for key in keys:
-            # Check if key still exists (might have expired)
-            if await self.redis.exists(key):
-                # Get expiration info
-                data = await self.redis.hgetall(key)
-                if data:
-                    str_data = {k.decode() if isinstance(k, bytes) else k: 
-                               v.decode() if isinstance(v, bytes) else v 
-                               for k, v in data.items()}
-                    
-                    try:
-                        expires_at = datetime.fromisoformat(str_data["expires_at"])
-                        if current_time > expires_at:
-                            await self.redis.delete(key)
-                            expired_count += 1
-                    except (KeyError, ValueError):
-                        # Invalid data, delete it
-                        await self.redis.delete(key)
-                        expired_count += 1
-        
-        if expired_count > 0:
-            logger.info("Cleaned up expired PKCE entries", extra={
-                "expired_count": expired_count
-            })
-        
-        return expired_count
+        try:
+            redis = await self._get_redis()
+            current_time = int(datetime.utcnow().timestamp())
+            cleaned_count = 0
+            
+            # Find cleanup keys that have expired
+            pattern = "pkce:cleanup:*"
+            async for key in redis.scan_iter(match=pattern):
+                try:
+                    timestamp = int(key.decode().split(":")[-1])
+                    if timestamp <= current_time:
+                        # Get states to cleanup
+                        states = await redis.smembers(key)
+                        
+                        # Delete individual PKCE entries
+                        for state in states:
+                            state_key = f"pkce:state:{state.decode()}"
+                            if await redis.delete(state_key):
+                                cleaned_count += 1
+                        
+                        # Delete cleanup key
+                        await redis.delete(key)
+                        
+                except Exception as e:
+                    logger.error(f"Error processing cleanup key {key}: {str(e)}")
+                    continue
+            
+            if cleaned_count > 0:
+                logger.info(f"Cleaned up {cleaned_count} expired PKCE entries")
+            
+            return cleaned_count
+            
+        except Exception as e:
+            logger.error(f"Failed to cleanup expired PKCE data: {str(e)}")
+            return 0
     
-    async def get_pkce_statistics(self) -> Dict[str, Any]:
+    async def get_pkce_stats(self) -> Dict[str, Any]:
         """
-        Get PKCE service statistics for monitoring.
+        Get PKCE statistics for monitoring
         
         Returns:
-            Dictionary with statistics about stored PKCE data.
+            Dictionary with PKCE statistics
         """
-        await self._ensure_redis_connection()
-        
-        # Get all PKCE keys
-        pattern = f"{self.PKCE_REDIS_PREFIX}:*"
-        keys = await self.redis.keys(pattern)
-        
-        total_entries = len(keys)
-        expired_entries = 0
-        current_time = datetime.now(timezone.utc)
-        
-        for key in keys:
-            if await self.redis.exists(key):
-                data = await self.redis.hgetall(key)
-                if data:
-                    str_data = {k.decode() if isinstance(k, bytes) else k: 
-                               v.decode() if isinstance(v, bytes) else v 
-                               for k, v in data.items()}
-                    
-                    try:
-                        expires_at = datetime.fromisoformat(str_data["expires_at"])
-                        if current_time > expires_at:
-                            expired_entries += 1
-                    except (KeyError, ValueError):
-                        expired_entries += 1
-        
-        return {
-            "total_entries": total_entries,
-            "active_entries": total_entries - expired_entries,
-            "expired_entries": expired_entries,
-            "ttl_seconds": self.PKCE_TTL_SECONDS,
-            "code_challenge_method": self.CODE_CHALLENGE_METHOD,
-            "code_verifier_length": self.CODE_VERIFIER_LENGTH
-        }
-
+        try:
+            redis = await self._get_redis()
+            
+            # Count active PKCE entries
+            pattern = "pkce:state:*"
+            active_count = 0
+            async for _ in redis.scan_iter(match=pattern):
+                active_count += 1
+            
+            # Count cleanup keys
+            cleanup_pattern = "pkce:cleanup:*"
+            cleanup_count = 0
+            async for _ in redis.scan_iter(match=cleanup_pattern):
+                cleanup_count += 1
+            
+            return {
+                "active_pkce_entries": active_count,
+                "cleanup_batches": cleanup_count,
+                "ttl_seconds": self._ttl,
+                "timestamp": datetime.utcnow().isoformat()
+            }
+            
+        except Exception as e:
+            logger.error(f"Failed to get PKCE stats: {str(e)}")
+            return {"error": str(e)}
 
 # Global PKCE service instance
-_pkce_service: Optional[PKCEService] = None
-
+pkce_service = PKCEService()
 
 async def get_pkce_service() -> PKCEService:
-    """Get the global PKCE service instance."""
-    global _pkce_service
-    
-    if _pkce_service is None:
-        _pkce_service = PKCEService()
-        await _pkce_service._ensure_redis_connection()
-    
-    return _pkce_service
+    """Get PKCE service instance"""
+    return pkce_service

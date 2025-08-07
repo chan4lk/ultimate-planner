@@ -111,3 +111,36 @@ class PKCEConfiguration(BaseModel):
         json_encoders = {
             datetime: lambda dt: dt.isoformat()
         }
+
+
+class PKCEAuthorizationResponse(BaseModel):
+    """Response from OAuth authorization URL generation with PKCE."""
+    authorization_url: str = Field(..., description="OAuth authorization URL with PKCE parameters")
+    state: str = Field(..., description="OAuth state parameter")
+    code_challenge: str = Field(..., description="Code challenge for verification")
+    provider: str = Field(..., description="OAuth provider name")
+    scopes: list[str] = Field(..., description="OAuth scopes")
+
+
+class PKCECallbackRequest(BaseModel):
+    """Request data for OAuth callback with PKCE validation."""
+    code: str = Field(..., description="Authorization code from OAuth provider")
+    state: str = Field(..., description="OAuth state parameter")
+    
+
+class PKCETokenResponse(BaseModel):
+    """Token response from PKCE-validated OAuth exchange."""
+    access_token: str = Field(..., description="OAuth access token")
+    token_type: str = Field(default="Bearer", description="Token type")
+    expires_in: Optional[int] = Field(None, description="Token expiry in seconds")
+    refresh_token: Optional[str] = Field(None, description="OAuth refresh token")
+    scope: Optional[str] = Field(None, description="Token scope")
+    provider: str = Field(..., description="OAuth provider name")
+
+
+class PKCEStatsResponse(BaseModel):
+    """PKCE statistics response."""
+    active_pkce_entries: int = Field(..., description="Active PKCE entries")
+    cleanup_batches: int = Field(..., description="Cleanup batch count")
+    ttl_seconds: int = Field(..., description="TTL in seconds")
+    timestamp: str = Field(..., description="Statistics timestamp")

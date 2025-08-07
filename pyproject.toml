@@ -27,4 +27,5 @@ dependencies = [
   "pillow",
   "redis>=4.5.0",
   "aioredis>=2.0.0",
+  "authlib>=1.2.0",
 ]
