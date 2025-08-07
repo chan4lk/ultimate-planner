@@ -76,13 +76,27 @@ def extract_user_id_from_token(token: str) -> Optional[str]:
 
 
 def blacklist_token(token: str) -> None:
-    """Add token to blacklist."""
+    """Add token to blacklist (legacy - use Redis service for new implementations)."""
     _token_blacklist.add(token)
 
 
 def is_token_blacklisted(token: str) -> bool:
-    """Check if token is blacklisted."""
+    """Check if token is blacklisted (legacy - use Redis service for new implementations)."""
     return token in _token_blacklist
+
+
+async def blacklist_token_redis(token_jti: str, expire_seconds: int = None) -> bool:
+    """Add JWT token to Redis blacklist."""
+    from ..services.redis_session_service import RedisSessionService
+    redis_session = RedisSessionService()
+    return await redis_session.blacklist_token(token_jti, expire_seconds)
+
+
+async def is_token_blacklisted_redis(token_jti: str) -> bool:
+    """Check if JWT token is blacklisted in Redis."""
+    from ..services.redis_session_service import RedisSessionService
+    redis_session = RedisSessionService()
+    return await redis_session.is_token_blacklisted(token_jti)
 
 
 def clear_token_blacklist() -> None:

@@ -8,17 +8,40 @@ from uuid import UUID, uuid4
 import json
 from typing_extensions import Annotated
 from .auth import router as auth_router
+from .auth.router_session import router as session_router
 from .database import create_tables
+from .config.redis_config import close_redis_connections, ping_redis
 
-app = FastAPI()
+app = FastAPI(
+    title="Ultimate Planner API",
+    description="Ultimate Planner with Advanced Authentication & Session Management",
+    version="1.0.0"
+)
 
-# Include authentication router
+# Include routers
 app.include_router(auth_router)
+app.include_router(session_router, prefix="/auth")
 
-# Create database tables on startup
+# Create database tables and test Redis connection on startup
 @app.on_event("startup")
-def startup_event():
+async def startup_event():
     create_tables()
+    
+    # Test Redis connection
+    try:
+        redis_healthy = await ping_redis()
+        if redis_healthy:
+            print("✅ Redis connection established successfully")
+        else:
+            print("❌ Redis connection failed")
+    except Exception as e:
+        print(f"❌ Redis connection error: {e}")
+
+# Close Redis connections on shutdown
+@app.on_event("shutdown")
+async def shutdown_event():
+    await close_redis_connections()
+    print("✅ Redis connections closed")
 
 # Set up templates
 templates = Jinja2Templates(directory="app/templates")

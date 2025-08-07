@@ -22,4 +22,9 @@ dependencies = [
   "python-multipart",
   "httpx",
   "cryptography",
+  "pyotp",
+  "qrcode[pil]",
+  "pillow",
+  "redis>=4.5.0",
+  "aioredis>=2.0.0",
 ]
