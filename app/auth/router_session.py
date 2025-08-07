@@ -345,8 +345,8 @@ async def analyze_session_security(
 @router.post("/{session_id}/extend")
 async def extend_session(
     session_id: str,
-    current_user: User = Depends(get_current_user),
-    background_tasks: BackgroundTasks
+    background_tasks: BackgroundTasks,
+    current_user: User = Depends(get_current_user)
 ) -> dict:
     """Extend session expiration (if remember_me was enabled)."""
     redis_session = RedisSessionService()
@@ -388,8 +388,8 @@ async def extend_session(
 
 @router.post("/cleanup")
 async def cleanup_expired_sessions(
-    current_user: User = Depends(get_current_user),
-    background_tasks: BackgroundTasks
+    background_tasks: BackgroundTasks,
+    current_user: User = Depends(get_current_user)
 ) -> dict:
     """Cleanup expired sessions (admin or user-initiated)."""
     def cleanup_task():
