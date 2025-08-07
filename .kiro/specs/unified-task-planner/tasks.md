@@ -17,7 +17,7 @@
   - Write tests for authentication flows
   - _Requirements: 7.1, 7.3_
 
-- [-] 3. Build OAuth integration framework
+- [ ] 3. Build OAuth integration framework
 
   - Create OAuthManager class with provider abstraction
   - Implement OAuth flow initiation and callback handling
