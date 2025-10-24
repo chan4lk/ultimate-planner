@@ -61,6 +61,11 @@ class Task(TaskCreate):
 def find_task(task_id: str) -> Optional[Dict[str, Any]]:
     return next((task for task in tasks if task["id"] == task_id), None)
 
+# Health check endpoint
+@app.get("/health")
+async def health_check():
+    return {"status": "healthy", "service": "ultimate-planner"}
+
 # Root endpoint
 @app.get("/", response_class=HTMLResponse)
 async def read_root(request: Request):

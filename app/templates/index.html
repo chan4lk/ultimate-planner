@@ -2,21 +2,20 @@
 
 {% block content %}
 <div class="task-form">
-    <form hx-post="/tasks" hx-target="#task-list" hx-swap="beforeend" _="on htmx:afterRequest reset() me">
-        <input type="text" name="text" placeholder="Enter a new task" required>
+    <form hx-post="/tasks" 
+          hx-target="#task-list" 
+          hx-swap="beforeend"
+          hx-on::after-request="this.reset()">
+        <input type="text" 
+               name="text" 
+               placeholder="What needs to be done?" 
+               required
+               autocomplete="off">
         <button type="submit">Add Task</button>
     </form>
 </div>
 
-<div class="task-list" id="task-list" hx-get="/tasks" hx-trigger="load, taskChanged from:body">
+<div class="task-list" id="task-list" hx-get="/tasks" hx-trigger="load">
     <!-- Tasks will be loaded here -->
 </div>
-
-<template id="task-item">
-    <div class="task-item">
-        <input type="checkbox" hx-put="/tasks/{id}/toggle" hx-target="closest .task-item" hx-swap="outerHTML">
-        <span class="task-text">{text}</span>
-        <button hx-delete="/tasks/{id}" hx-target="closest .task-item" hx-swap="outerHTML">Delete</button>
-    </div>
-</template>
 {% endblock %}
