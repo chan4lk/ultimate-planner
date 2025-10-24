@@ -8,11 +8,21 @@
           hx-swap="innerHTML"
           hx-on::after-request="this.reset()">
         <div class="form-row">
-            <input type="text" 
-                   name="text" 
-                   placeholder="What needs to be done?" 
-                   required
-                   autocomplete="off">
+            <div class="input-with-mic">
+                <input type="text" 
+                       id="task-input"
+                       name="text" 
+                       placeholder="What needs to be done?" 
+                       required
+                       autocomplete="off">
+                <button type="button" 
+                        id="mic-button" 
+                        class="mic-button"
+                        title="Voice input"
+                        aria-label="Start voice input">
+                    🎤
+                </button>
+            </div>
             <select name="label_id" 
                     id="label-select"
                     class="label-select"
@@ -99,5 +109,129 @@
             this.style.display = 'none';
         }
     });
+
+    // Speech Recognition Setup
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    
+    if (SpeechRecognition) {
+        const recognition = new SpeechRecognition();
+        recognition.continuous = false;
+        recognition.interimResults = false;
+        recognition.lang = 'en-US';
+
+        const micButton = document.getElementById('mic-button');
+        const taskInput = document.getElementById('task-input');
+        let isRecording = false;
+
+        micButton.addEventListener('click', function() {
+            if (isRecording) {
+                recognition.stop();
+                isRecording = false;
+                micButton.classList.remove('recording');
+                micButton.textContent = '🎤';
+                micButton.title = 'Voice input';
+                taskInput.placeholder = 'What needs to be done?';
+            } else {
+                try {
+                    recognition.start();
+                    isRecording = true;
+                    micButton.classList.add('recording');
+                    micButton.textContent = '⏹️';
+                    micButton.title = 'Stop recording';
+                    taskInput.placeholder = '🎤 Listening... Speak now!';
+                } catch (error) {
+                    console.error('Failed to start recognition:', error);
+                    showNotification('⚠️ Failed to start voice input. Please try again.', 'error');
+                }
+            }
+        });
+
+        recognition.onresult = function(event) {
+            const transcript = event.results[0][0].transcript;
+            const confidence = event.results[0][0].confidence;
+            taskInput.value = transcript;
+            taskInput.focus();
+            
+            // Show success notification with confidence level
+            const confidencePercent = Math.round(confidence * 100);
+            console.log(`Speech recognized: "${transcript}" (${confidencePercent}% confidence)`);
+            
+            if (confidencePercent < 70) {
+                showNotification(`✅ Heard: "${transcript}"\n⚠️ Low confidence (${confidencePercent}%). Please verify.`, 'info');
+            }
+        };
+
+        recognition.onerror = function(event) {
+            console.error('Speech recognition error:', event.error);
+            isRecording = false;
+            micButton.classList.remove('recording');
+            micButton.textContent = '🎤';
+            micButton.title = 'Voice input';
+            
+            // Detailed error messages
+            let errorMessage = '';
+            switch(event.error) {
+                case 'not-allowed':
+                case 'permission-denied':
+                    errorMessage = '🎤 Microphone access denied.\n\nPlease:\n1. Click the 🔒 icon in your browser address bar\n2. Allow microphone access\n3. Refresh the page';
+                    break;
+                case 'no-speech':
+                    errorMessage = '🔇 No speech detected. Please try again and speak clearly.';
+                    break;
+                case 'audio-capture':
+                    errorMessage = '🎤 No microphone found. Please connect a microphone and try again.';
+                    break;
+                case 'network':
+                    errorMessage = '🌐 Network error. Please check your internet connection.';
+                    break;
+                case 'aborted':
+                    // User stopped - no alert needed
+                    console.log('Speech recognition aborted by user');
+                    return;
+                case 'service-not-allowed':
+                    errorMessage = '⚠️ Speech recognition service not available. Please use HTTPS or localhost.';
+                    break;
+                default:
+                    errorMessage = `⚠️ Speech recognition error: ${event.error}\n\nPlease try again or type manually.`;
+            }
+            
+            if (errorMessage) {
+                // Show error in a more user-friendly way
+                showNotification(errorMessage, 'error');
+            }
+        };
+
+        // Simple notification function
+        function showNotification(message, type = 'info') {
+            const notification = document.createElement('div');
+            notification.className = `notification notification-${type}`;
+            notification.textContent = message;
+            document.body.appendChild(notification);
+            
+            setTimeout(() => {
+                notification.classList.add('show');
+            }, 10);
+            
+            setTimeout(() => {
+                notification.classList.remove('show');
+                setTimeout(() => notification.remove(), 300);
+            }, 4000);
+        }
+
+        recognition.onend = function() {
+            isRecording = false;
+            micButton.classList.remove('recording');
+            micButton.textContent = '🎤';
+            micButton.title = 'Voice input';
+            taskInput.placeholder = 'What needs to be done?';
+        };
+    } else {
+        // Hide mic button if speech recognition is not supported
+        const micButton = document.getElementById('mic-button');
+        if (micButton) {
+            micButton.style.display = 'none';
+        }
+        console.warn('Speech recognition not supported in this browser');
+    }
 </script>
 {% endblock %}
