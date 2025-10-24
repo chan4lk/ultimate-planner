@@ -1,8 +1,6 @@
 # Ultimate Planner - Enterprise Authentication System
 # Docker Compose for complete development/production environment
 
-version: '3.8'
-
 services:
   # Redis - Session Management & Caching
   redis:
@@ -61,6 +59,7 @@ services:
       target: production
     container_name: ultimate-planner-app
     restart: unless-stopped
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
     environment:
       # Database Configuration
       DATABASE_URL: postgresql://${POSTGRES_USER:-app_user}:${POSTGRES_PASSWORD:-secure_password_change_me}@postgres:5432/${POSTGRES_DB:-ultimate_planner}
@@ -97,12 +96,15 @@ services:
       RATE_LIMIT_WINDOW: ${RATE_LIMIT_WINDOW:-300}
       
       # Environment
-      ENVIRONMENT: ${ENVIRONMENT:-production}
-      LOG_LEVEL: ${LOG_LEVEL:-info}
+      ENVIRONMENT: ${ENVIRONMENT:-development}
+      LOG_LEVEL: ${LOG_LEVEL:-debug}
       
     ports:
       - "8000:8000"
     volumes:
+      - ./app:/app/app
+      - ./alembic:/app/alembic
+      - ./config:/app/config
       - app_logs:/app/logs
       - app_data:/app/data
     depends_on:
@@ -200,4 +202,4 @@ networks:
     driver: bridge
     ipam:
       config:
-        - subnet: 172.20.0.0/16
+        - subnet: 172.21.0.0/16
