@@ -4,6 +4,8 @@
 
 Ultimate Planner is a cutting-edge modular monolith FastAPI backend featuring **world-class security**, **OAuth 2.1 compliance**, and **enterprise-scale authentication**. Built with **zero-trust architecture** and **comprehensive audit trails** for Fortune 500-level security requirements.
 
+![Ultimate Planner Screenshot](docs/screenshot.png)
+
 ## 🔒 Enterprise Security Features
 
 ✅ **Multi-Factor Authentication (MFA)** - TOTP with backup codes  
