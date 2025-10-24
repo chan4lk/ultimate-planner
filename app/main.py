@@ -111,6 +111,40 @@ async def read_root(request: Request):
 async def list_labels():
     return {"labels": labels}
 
+# Create a new label
+@app.post("/labels", response_class=HTMLResponse)
+async def create_label(
+    request: Request,
+    hx_request: Annotated[str | None, Header()] = None
+):
+    form_data = await request.form()
+    label_name = form_data.get("name")
+    label_color = form_data.get("color", "#6366f1")
+    
+    if not label_name:
+        raise HTTPException(status_code=400, detail="Label name is required")
+    
+    # Generate ID from name (lowercase, replace spaces with hyphens)
+    label_id = label_name.lower().replace(" ", "-").replace("_", "-")
+    
+    # Check if label already exists
+    if find_label(label_id):
+        raise HTTPException(status_code=400, detail="Label already exists")
+    
+    new_label = {
+        "id": label_id,
+        "name": label_name,
+        "color": label_color
+    }
+    labels.append(new_label)
+    
+    if hx_request:
+        return templates.TemplateResponse(
+            "label_options.html",
+            {"request": request, "labels": labels}
+        )
+    return {"label": new_label}
+
 # Get all tasks
 @app.get("/tasks", response_class=HTMLResponse)
 async def list_tasks(

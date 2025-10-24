@@ -2,7 +2,8 @@
 
 {% block content %}
 <div class="task-form">
-    <form hx-post="/tasks" 
+    <form id="task-form"
+          hx-post="/tasks" 
           hx-target="#task-list" 
           hx-swap="innerHTML"
           hx-on::after-request="this.reset()">
@@ -12,12 +13,16 @@
                    placeholder="What needs to be done?" 
                    required
                    autocomplete="off">
-            <select name="label_id" class="label-select">
+            <select name="label_id" 
+                    id="label-select"
+                    class="label-select"
+                    onchange="if(this.value === '__new__') { document.getElementById('label-modal').style.display = 'flex'; this.value = ''; }">
                 <option value="">No Label</option>
                 <option value="personal">🌱 Personal</option>
                 <option value="work">💼 Work</option>
                 <option value="urgent">🔥 Urgent</option>
                 <option value="ideas">💡 Ideas</option>
+                <option value="__new__" style="font-weight: 600; color: #6366f1;">➕ Add New Label</option>
             </select>
             <button type="submit">Add Task</button>
         </div>
@@ -27,4 +32,72 @@
 <div class="task-list" id="task-list" hx-get="/tasks" hx-trigger="load">
     <!-- Tasks will be loaded here -->
 </div>
+
+<!-- Label Creation Modal -->
+<div id="label-modal" class="modal">
+    <div class="modal-content">
+        <div class="modal-header">
+            <h3>Create New Label</h3>
+            <button class="modal-close" onclick="document.getElementById('label-modal').style.display = 'none'">✕</button>
+        </div>
+        <form hx-post="/labels"
+              hx-target="#label-select"
+              hx-swap="innerHTML"
+              hx-on::after-request="document.getElementById('label-modal').style.display = 'none'; this.reset();">
+            <div class="modal-body">
+                <div class="form-group">
+                    <label for="label-name">Label Name</label>
+                    <input type="text" 
+                           id="label-name"
+                           name="name" 
+                           placeholder="e.g., Shopping, Health, etc." 
+                           required
+                           autocomplete="off">
+                </div>
+                <div class="form-group">
+                    <label for="label-color">Color</label>
+                    <div class="color-picker">
+                        <input type="color" 
+                               id="label-color"
+                               name="color" 
+                               value="#6366f1">
+                        <span class="color-preview" id="color-preview">#6366f1</span>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" 
+                        class="btn-secondary" 
+                        onclick="document.getElementById('label-modal').style.display = 'none'">
+                    Cancel
+                </button>
+                <button type="submit" class="btn-primary">Create Label</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<script>
+    // Update color preview when color changes
+    document.getElementById('label-color')?.addEventListener('input', function(e) {
+        document.getElementById('color-preview').textContent = e.target.value;
+    });
+
+    // Close modal with Escape key
+    document.addEventListener('keydown', function(e) {
+        if (e.key === 'Escape') {
+            const modal = document.getElementById('label-modal');
+            if (modal.style.display === 'flex') {
+                modal.style.display = 'none';
+            }
+        }
+    });
+
+    // Close modal when clicking outside
+    document.getElementById('label-modal')?.addEventListener('click', function(e) {
+        if (e.target === this) {
+            this.style.display = 'none';
+        }
+    });
+</script>
 {% endblock %}

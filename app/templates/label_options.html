@@ -1,0 +1,12 @@
+<option value="">No Label</option>
+{% for label in labels %}
+<option value="{{ label.id }}">
+    {% if label.id == 'personal' %}🌱
+    {% elif label.id == 'work' %}💼
+    {% elif label.id == 'urgent' %}🔥
+    {% elif label.id == 'ideas' %}💡
+    {% else %}🏷️
+    {% endif %} {{ label.name }}
+</option>
+{% endfor %}
+<option value="__new__" style="font-weight: 600; color: #6366f1;">➕ Add New Label</option>
