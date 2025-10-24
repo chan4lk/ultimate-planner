@@ -1,20 +1,79 @@
-{% if tasks %}
-    {% for task in tasks %}
-    <div class="task-item {% if task.done %}done{% endif %}" id="task-{{ task.id }}">
-        <input type="checkbox" 
-               {% if task.done %}checked{% endif %} 
-               hx-put="/tasks/{{ task.id }}/toggle" 
-               hx-target="closest .task-item" 
-               hx-swap="outerHTML">
-        <span class="task-text">{{ task.text }}</span>
-        <button hx-delete="/tasks/{{ task.id }}" 
-                hx-target="closest .task-item" 
-                hx-swap="outerHTML"
-                hx-confirm="Are you sure you want to delete this task?">
-            🗑️ Delete
-        </button>
+{% set label_icons = {
+    'personal': '🌱',
+    'work': '💼',
+    'urgent': '🔥',
+    'ideas': '💡'
+} %}
+
+{% set has_tasks = namespace(value=False) %}
+{% for label_id, task_list in grouped_tasks.items() %}
+    {% if task_list %}
+        {% set has_tasks.value = True %}
+    {% endif %}
+{% endfor %}
+
+{% if has_tasks.value %}
+    <div class="buckets-container">
+        {% for label in labels %}
+            {% set tasks_in_label = grouped_tasks.get(label.id, []) %}
+            {% if tasks_in_label %}
+            <div class="bucket" data-label="{{ label.id }}">
+                <div class="bucket-header" style="border-left-color: {{ label.color }}">
+                    <span class="bucket-icon">{{ label_icons.get(label.id, '📋') }}</span>
+                    <h3 class="bucket-title">{{ label.name }}</h3>
+                    <span class="bucket-count">{{ tasks_in_label|length }}</span>
+                </div>
+                <div class="bucket-tasks">
+                    {% for task in tasks_in_label %}
+                    <div class="task-item {% if task.done %}done{% endif %}" id="task-{{ task.id }}">
+                        <input type="checkbox" 
+                               {% if task.done %}checked{% endif %} 
+                               hx-put="/tasks/{{ task.id }}/toggle" 
+                               hx-target="closest .task-item" 
+                               hx-swap="outerHTML">
+                        <span class="task-text">{{ task.text }}</span>
+                        <button hx-delete="/tasks/{{ task.id }}" 
+                                hx-target="closest .bucket"
+                                hx-swap="outerHTML"
+                                hx-confirm="Are you sure you want to delete this task?">
+                            🗑️
+                        </button>
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+            {% endif %}
+        {% endfor %}
+        
+        {% set unlabeled_tasks = grouped_tasks.get('unlabeled', []) %}
+        {% if unlabeled_tasks %}
+        <div class="bucket" data-label="unlabeled">
+            <div class="bucket-header" style="border-left-color: #9ca3af">
+                <span class="bucket-icon">📋</span>
+                <h3 class="bucket-title">Unlabeled</h3>
+                <span class="bucket-count">{{ unlabeled_tasks|length }}</span>
+            </div>
+            <div class="bucket-tasks">
+                {% for task in unlabeled_tasks %}
+                <div class="task-item {% if task.done %}done{% endif %}" id="task-{{ task.id }}">
+                    <input type="checkbox" 
+                           {% if task.done %}checked{% endif %} 
+                           hx-put="/tasks/{{ task.id }}/toggle" 
+                           hx-target="closest .task-item" 
+                           hx-swap="outerHTML">
+                    <span class="task-text">{{ task.text }}</span>
+                    <button hx-delete="/tasks/{{ task.id }}" 
+                            hx-target="closest .bucket"
+                            hx-swap="outerHTML"
+                            hx-confirm="Are you sure you want to delete this task?">
+                        🗑️
+                    </button>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+        {% endif %}
     </div>
-    {% endfor %}
 {% else %}
     <div class="task-list-empty">
         <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">

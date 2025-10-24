@@ -46,20 +46,55 @@ async def shutdown_event():
 # Set up templates
 templates = Jinja2Templates(directory="app/templates")
 
-# In-memory storage for tasks
+# In-memory storage for tasks and labels
 tasks: List[Dict[str, Any]] = []
+labels: List[Dict[str, Any]] = [
+    {"id": "personal", "name": "Personal", "color": "#10b981"},
+    {"id": "work", "name": "Work", "color": "#3b82f6"},
+    {"id": "urgent", "name": "Urgent", "color": "#ef4444"},
+    {"id": "ideas", "name": "Ideas", "color": "#f59e0b"},
+]
 
 # Pydantic models
 class TaskCreate(BaseModel):
     text: str
+    label_id: Optional[str] = None
 
 class Task(TaskCreate):
     id: str
     done: bool = False
 
-# Utility function to find task by ID
+class LabelCreate(BaseModel):
+    name: str
+    color: str
+
+class Label(LabelCreate):
+    id: str
+
+# Utility functions
 def find_task(task_id: str) -> Optional[Dict[str, Any]]:
     return next((task for task in tasks if task["id"] == task_id), None)
+
+def find_label(label_id: str) -> Optional[Dict[str, Any]]:
+    return next((label for label in labels if label["id"] == label_id), None)
+
+def group_tasks_by_label() -> Dict[str, List[Dict[str, Any]]]:
+    """Group tasks by their labels, including unlabeled tasks"""
+    grouped = {"unlabeled": []}
+    
+    # Initialize groups for each label
+    for label in labels:
+        grouped[label["id"]] = []
+    
+    # Group tasks
+    for task in tasks:
+        label_id = task.get("label_id")
+        if label_id and label_id in grouped:
+            grouped[label_id].append(task)
+        else:
+            grouped["unlabeled"].append(task)
+    
+    return grouped
 
 # Health check endpoint
 @app.get("/health")
@@ -71,16 +106,22 @@ async def health_check():
 async def read_root(request: Request):
     return templates.TemplateResponse("index.html", {"request": request})
 
+# Get all labels
+@app.get("/labels")
+async def list_labels():
+    return {"labels": labels}
+
 # Get all tasks
 @app.get("/tasks", response_class=HTMLResponse)
 async def list_tasks(
     request: Request, 
     hx_request: Annotated[str | None, Header()] = None
 ):
+    grouped_tasks = group_tasks_by_label()
     if hx_request:
         return templates.TemplateResponse(
             "task_list.html",
-            {"request": request, "tasks": tasks}
+            {"request": request, "grouped_tasks": grouped_tasks, "labels": labels}
         )
     return templates.TemplateResponse("index.html", {"request": request, "tasks": tasks})
 
@@ -92,6 +133,7 @@ async def create_task(
 ):
     form_data = await request.form()
     task_text = form_data.get("text")
+    label_id = form_data.get("label_id")
     
     if not task_text:
         raise HTTPException(status_code=400, detail="Task text is required")
@@ -99,14 +141,16 @@ async def create_task(
     new_task = {
         "id": str(uuid4()),
         "text": task_text,
+        "label_id": label_id if label_id else None,
         "done": False
     }
     tasks.append(new_task)
     
     if hx_request:
+        grouped_tasks = group_tasks_by_label()
         return templates.TemplateResponse(
             "task_list.html",
-            {"request": request, "tasks": [new_task]}
+            {"request": request, "grouped_tasks": grouped_tasks, "labels": labels}
         )
     return templates.TemplateResponse("task_list.html", {"request": request, "tasks": tasks})
 
@@ -124,9 +168,11 @@ async def toggle_task(
     task["done"] = not task["done"]
     
     if hx_request:
+        # Return just the updated task item
+        label = find_label(task.get("label_id")) if task.get("label_id") else None
         return templates.TemplateResponse(
-            "task_list.html",
-            {"request": request, "tasks": [task]}
+            "task_item.html",
+            {"request": request, "task": task, "label": label}
         )
     return templates.TemplateResponse("task_list.html", {"request": request, "tasks": tasks})
 
